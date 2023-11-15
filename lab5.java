@@ -7,7 +7,7 @@ import java.util.Scanner;
 import java.util.ArrayList;
 import java.util.Enumeration;
 
-public class lab3 extends instructions {
+public class lab5 extends instructions {
     public static void main(String[] args) throws IOException {
         if (args.length == 0) {
             System.out.println("Usage java Main <filename>");
@@ -21,6 +21,7 @@ public class lab3 extends instructions {
             Scanner scriptReader = new Scanner(new FileReader(scriptname)); 
             scriptLines = getScripts(scriptReader); 
         }
+        int GHR_size = Integer.parseInt(args[2]);
         Scanner reader = new Scanner(new FileReader(filename));
         Hashtable<String, String> reg_codes = buildRegisterTable();
         ArrayList<String> lines = getLines(reader);
@@ -28,14 +29,20 @@ public class lab3 extends instructions {
         ArrayList<Object> write = write(reg_codes, lines, label_addresses);
         
         if (scriptLines.size() == 0) {
-            spim(write, reg_codes, label_addresses);
+            spim(write, reg_codes, label_addresses, GHR_size);
         } else {
-            spimScript(write, reg_codes, label_addresses, scriptLines);
+            spimScript(write, reg_codes, label_addresses, scriptLines, GHR_size);
         }
     }
 
     
-    public static void spim(ArrayList<Object> write, Hashtable<String, String> reg_codes, Hashtable<String, String> label_addresses) {
+    public static void spim(ArrayList<Object> write, Hashtable<String, String> reg_codes, Hashtable<String, String> label_addresses, int GHR_size) {
+        int GHR = 0;
+        int[] predictor = new int[(int)Math.pow(2, GHR_size)];
+        // int GHR4 = 0;
+        // int[] predictor4 = new int[(int)Math.pow(2, 4)];
+        // int GHR2 = 0;
+        // int[] predictor2 = new int[(int)Math.pow(2, 2)];
         int[] registers = new int[32];
         int[] data_memory = new int[8192];
         for (int i = 0; i < data_memory.length; i++) {
@@ -46,6 +53,7 @@ public class lab3 extends instructions {
         final int[] pc = {0};
 
         Runnable runnable = new Runnable() {
+            
             public void run() {
                 Object curr = write.get(pc[0]);
                 if (curr.getClass().equals(instructions.And.class)){
@@ -116,6 +124,7 @@ public class lab3 extends instructions {
                     int offset = Integer.parseInt(obj.offset, 2);
                     byte b_offset = (byte)((int)offset);
                     if (registers[rs] == registers[rt]){
+                        // BRANCH TAKEN
                         pc[0] += b_offset;
                     }
                 }
@@ -125,7 +134,9 @@ public class lab3 extends instructions {
                     int rt = Integer.parseInt(obj.rt, 2);
                     int offset = Integer.parseInt(obj.offset, 2);
                     byte b_offset = (byte)((int)offset);
+
                     if (registers[rs] != registers[rt]){
+                        // BRANCH TAKEN
                         pc[0] += b_offset;
                     }
                 }
@@ -245,12 +256,16 @@ public class lab3 extends instructions {
         }
     }
 
-    public static void spimScript(ArrayList<Object> write, Hashtable<String, String> reg_codes, Hashtable<String, String> label_addresses,ArrayList<String> scriptLines) {
+    public static void spimScript(ArrayList<Object> write, Hashtable<String, String> reg_codes, Hashtable<String, String> label_addresses,ArrayList<String> scriptLines, int GHR_size) {
+        int GHR[] = {0};
+        int mask = (1 << GHR_size) - 1;
+        int[] predictor = new int[(int)Math.pow(2, GHR_size)];
         int[] registers = new int[32];
         int[] data_memory = new int[8192];
         for (int i = 0; i < data_memory.length; i++) {
             data_memory[i] = 0;
         }
+        int[] bcount = {0, 0}; // SPOT 0 IS TOTAL BRANCH COUNT, SPOT 1 IS NUMBER CORRECT
 
         final int[] pc = {0};
 
@@ -329,9 +344,32 @@ public class lab3 extends instructions {
                     int rt = Integer.parseInt(obj.rt, 2);
                     int offset = Integer.parseInt(obj.offset, 2);
                     byte b_offset = (byte)((int)offset);
-                    if (registers[rs] == registers[rt]){
+                    
+                    bcount[0]++;
+                    int prediction = predictor[GHR[0]];
+                    System.out.println("BQE");
+                
+                    if (registers[rs] == registers[rt]){ // BRANCH TAKEN
+                        if (prediction >= 2) { // PREDICTION CORRECT
+                            bcount[1] += 1;
+                        }
+                        if (prediction < 3) {
+                            predictor[GHR[0]]+= 1; 
+                        }
+                        GHR[0] <<= 1;
+                        GHR[0] = GHR[0] | 1;
                         pc[0] += b_offset;
                     }
+                    else { // BRANCH NOT TAKEN
+                        if (prediction < 2) { // PREDICTION CORRECT
+                            bcount[1]++;
+                        }
+                        if (prediction > 0) {
+                            predictor[GHR[0]] -= 1;
+                        }
+                        GHR[0] <<= 1;
+                    }
+                    GHR[0] &= mask;
                 }
                 else if (curr.getClass().equals(instructions.Bne.class)){
                     Bne obj = (Bne) curr;
@@ -339,9 +377,31 @@ public class lab3 extends instructions {
                     int rt = Integer.parseInt(obj.rt, 2);
                     int offset = Integer.parseInt(obj.offset, 2);
                     byte b_offset = (byte)((int)offset);
+                    bcount[0]++;
+                    int prediction = predictor[GHR[0]];
+
                     if (registers[rs] != registers[rt]){
+                        if (prediction >= 2) { // PREDICTION CORRECT
+                            bcount[1] += 1;
+                        }
+                        if (prediction < 3) {
+                            predictor[GHR[0]]+= 1; 
+                        }
+                        GHR[0] <<= 1;
+                        GHR[0] = GHR[0] | 1;
                         pc[0] += b_offset;
                     }
+                    else { // BRANCH NOT TAKEN
+                        if (prediction < 2) { // PREDICTION CORRECT
+                            bcount[1]++;
+                        }
+                        if (prediction > 0) {
+                            predictor[GHR[0]] -= 1;
+                        }
+                        GHR[0] <<= 1;
+                    }
+                    GHR[0] &= mask;
+
                 }
                 else if (curr.getClass().equals(instructions.Lw.class)){
                     Lw obj = (Lw) curr;
@@ -389,6 +449,12 @@ public class lab3 extends instructions {
             }
             if (input.charAt(0) == 'q') {
                 break;
+            }
+
+            else if (input.charAt(0) == 'b') {
+                float accuracy = 100.0f * ((float)bcount[1] / bcount[0]); // Convert one operand to float
+                System.out.format("accuracy %.2f%% (%d correct predictions, %d predictions) \n", 
+                    accuracy, bcount[1], bcount[0]);
             }
 
             else if (input.charAt(0) == 'm') {

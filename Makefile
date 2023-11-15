@@ -1,4 +1,4 @@
 lab5:
 	javac instructions.java
-	javac lab3.java
+	javac lab5.java
 	#/opt/jdk-16/bin/javac *.javas
